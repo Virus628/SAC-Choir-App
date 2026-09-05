@@ -1,30 +1,31 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:church_app/main.dart';
+import 'package:church_app/song_model.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('Song.fromMap', () {
+    test('maps all fields with defaults when data is full', () {
+      final song = Song.fromMap('song-1', {
+        'title': 'Amazing Grace',
+        'category': 'Entrance Hymn',
+        'composer': 'John Newton',
+        'lyrics': 'Amazing grace...',
+      });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      expect(song.id, 'song-1');
+      expect(song.title, 'Amazing Grace');
+      expect(song.category, 'Entrance Hymn');
+      expect(song.composer, 'John Newton');
+      expect(song.lyrics, 'Amazing grace...');
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('uses safe fallbacks when fields are missing', () {
+      final song = Song.fromMap('song-2', {});
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(song.title, 'Untitled');
+      expect(song.category, 'General');
+      expect(song.composer, 'Unknown Composer');
+      expect(song.lyrics, '');
+    });
   });
 }

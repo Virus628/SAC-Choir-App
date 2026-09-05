@@ -38,6 +38,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
 
   // Action to update song in Firestore
   void _updateSong() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     try {
       await FirebaseFirestore.instance
           .collection('songs')
@@ -48,18 +50,16 @@ class _LyricsScreenState extends State<LyricsScreen> {
             'lyrics': _lyricsController.text.trim(),
           });
 
+      if (!mounted) return;
       setState(() => _isEditing = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Song updated successfully!')),
-        );
-        // Pop back to category view since the local object data changed
-        Navigator.pop(context);
-      }
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Song updated successfully!')),
+      );
+      // Pop back to category view since the local object data changed
+      navigator.pop();
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Failed to update: $e')));
     }
   }
 
@@ -67,7 +67,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
   void _confirmDelete() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Delete Song?'),
           content: Text(
@@ -75,28 +75,28 @@ class _LyricsScreenState extends State<LyricsScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             TextButton(
               onPressed: () async {
-                Navigator.pop(context); // Close dialog
+                Navigator.pop(dialogContext); // Close dialog
+                final messenger = ScaffoldMessenger.of(dialogContext);
+                final navigator = Navigator.of(dialogContext);
                 try {
                   await FirebaseFirestore.instance
                       .collection('songs')
                       .doc(widget.song.id)
                       .delete();
 
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Song deleted successfully. 🗑️'),
-                      ),
-                    );
-                    Navigator.pop(context); // Close lyrics screen
-                  }
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Song deleted successfully. 🗑️'),
+                    ),
+                  );
+                  navigator.pop(); // Close lyrics screen
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(content: Text('Failed to delete: $e')),
                   );
                 }

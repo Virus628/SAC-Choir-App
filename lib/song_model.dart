@@ -16,13 +16,16 @@ class Song {
   });
 
   factory Song.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    return Song.fromMap(doc.id, doc.data() as Map<String, dynamic>);
+  }
+
+  factory Song.fromMap(String id, Map<String, dynamic> data) {
     return Song(
-      id: doc.id,
+      id: id,
       title: data['title'] ?? 'Untitled',
       category: data['category'] ?? 'General',
       lyrics: data['lyrics'] ?? '',
-      composer: data['composer'] ?? 'Unknown Composer', // *** NEW FIELD FALLBACK ***
+      composer: data['composer'] ?? 'Unknown Composer',
     );
   }
 }

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'category_view_screen.dart';
 import 'add_song_screen.dart';
 import 'lyrics_screen.dart';
 import 'song_model.dart';
+import 'song_categories.dart';
+import 'app_config.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'admin_auth.dart';
 
 class SACAppHomeScreen extends StatefulWidget {
   final bool isDarkMode;
@@ -24,19 +28,37 @@ class SACAppHomeScreen extends StatefulWidget {
 class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = "";
-  
+
   bool _isAdminMode = false;
 
-  final List<String> songCategories = [
-    'Entrance Hymn', 'Kyrie', 'Gloria', 'Gospel Acclamation',
-    'Offertory', 'Sanctus', 'Memorial Acclamation', 'Great Amen',
-    'The Lord\'s Prayer', 'Agnus Dei', 'Communion', 'Recessional Hymn',
-  ];
+  String _appVersion = '';
 
-  // Opens the browser to download the updated APK
+  // Local preview while the image-framing sliders are being dragged; commits
+  // to Firestore once per gesture via onChangeEnd to avoid write spam.
+  double? _dragHeight;
+  double? _dragAlignmentY;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _appVersion = '${info.version}+${info.buildNumber}');
+      }
+    } catch (_) {
+      // Leave _appVersion empty; the drawer falls back to 'Version -'.
+    }
+  }
+
+  // Opens the browser to download the updated build
   Future<void> _downloadLatestUpdate() async {
-    final Uri url = Uri.parse('https://drive.google.com/drive/folders/1AwmsFcNHxD3TjScqpx_839PJEiPQgOqN?usp=drive_link'); 
-    
+    final Uri url = Uri.parse(AppConfig.updateDownloadUrl);
+
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } else {
@@ -75,6 +97,10 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
           activeAlignmentY = (data['imageAlignmentY'] ?? 0.0).toDouble();
         }
 
+        // Local overrides take priority while a slider is being dragged.
+        final previewHeight = _dragHeight ?? activeHeight;
+        final previewAlignmentY = _dragAlignmentY ?? activeAlignmentY;
+
         return Scaffold(
           appBar: AppBar(
             backgroundColor: widget.isDarkMode ? const Color(0xFF1F1F1F) : Colors.indigo,
@@ -85,15 +111,30 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
             automaticallyImplyLeading: false, 
             
             title: GestureDetector(
-              onLongPress: () {
+              onLongPress: () async {
+                if (_isAdminMode) {
+                  setState(() {
+                    _isAdminMode = false;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Admin Mode Disabled'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                  return;
+                }
+
+                final messenger = ScaffoldMessenger.of(context);
+                final adminUser = await ensureAdminSignedIn(context);
+                if (adminUser == null || !mounted) return;
+
                 setState(() {
-                  _isAdminMode = !_isAdminMode; 
+                  _isAdminMode = true;
                 });
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   SnackBar(
-                    content: Text(_isAdminMode 
-                        ? 'Admin Crop Tool Active!' 
-                        : 'Updated Successfully!'),
+                    content: Text('Welcome, ${adminUser.email}! Admin Mode Active'),
                     duration: const Duration(seconds: 2),
                   ),
                 );
@@ -160,6 +201,25 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
                       );
                     },
                   ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.redAccent),
+                    title: const Text('Sign Out'),
+                    subtitle: const Text('Leave admin mode'),
+                    onTap: () async {
+                      Navigator.pop(context); // Close drawer
+                      final messenger = ScaffoldMessenger.of(context);
+                      await signOutAdmin();
+                      if (!mounted) return;
+                      setState(() => _isAdminMode = false);
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Signed out of admin mode.'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
                 ],
                 
                 // Pushes the version text down to the very bottom like a footer
@@ -168,7 +228,7 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Text(
-                    'Version 1.2.0',
+                    _appVersion.isEmpty ? 'Version -' : 'Version $_appVersion',
                     style: TextStyle(
                       color: widget.isDarkMode ? Colors.white38 : Colors.black38,
                       fontSize: 12,
@@ -197,12 +257,12 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
                           borderRadius: BorderRadius.circular(12),
                           child: Image.asset(
                             'assets/bg.jpeg', 
-                            height: activeHeight, 
+                            height: previewHeight, 
                             width: double.infinity,
                             fit: BoxFit.cover,
-                            alignment: Alignment(0.0, activeAlignmentY),
+                            alignment: Alignment(0.0, previewAlignmentY),
                             errorBuilder: (context, error, stackTrace) => Container(
-                              height: activeHeight,
+                              height: previewHeight,
                               color: widget.isDarkMode ? Colors.grey[800] : Colors.grey[300],
                               child: const Center(child: Icon(Icons.broken_image, size: 40, color: Colors.white)),
                             ),
@@ -227,14 +287,21 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
                                   const SizedBox(width: 80, child: Text("Frame Height:", style: TextStyle(fontWeight: FontWeight.bold))),
                                   Expanded(
                                     child: Slider(
-                                      value: activeHeight.clamp(80.0, 300.0),
+                                      value: previewHeight.clamp(80.0, 300.0),
                                       min: 80.0,
                                       max: 300.0,
                                       divisions: 22,
-                                      onChanged: (double val) => _updateRemoteLayoutSettings(val, activeAlignmentY),
+                                      onChanged: (double val) => setState(() => _dragHeight = val.clamp(80.0, 300.0)),
+                                      onChangeEnd: (double val) {
+                                        setState(() => _dragHeight = null);
+                                        _updateRemoteLayoutSettings(
+                                          val.clamp(80.0, 300.0),
+                                          previewAlignmentY,
+                                        );
+                                      },
                                     ),
                                   ),
-                                  Text("${activeHeight.round()}px"),
+                                  Text("${previewHeight.round()}px"),
                                 ],
                               ),
                               Row(
@@ -242,16 +309,23 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
                                   const SizedBox(width: 80, child: Text("Vertical Pan:", style: TextStyle(fontWeight: FontWeight.bold))),
                                   Expanded(
                                     child: Slider(
-                                      value: activeAlignmentY.clamp(-1.0, 1.0),
+                                      value: previewAlignmentY.clamp(-1.0, 1.0),
                                       min: -1.0,
                                       max: 1.0,
                                       divisions: 40,
-                                      onChanged: (double val) => _updateRemoteLayoutSettings(activeHeight, val),
+                                      onChanged: (double val) => setState(() => _dragAlignmentY = val.clamp(-1.0, 1.0)),
+                                      onChangeEnd: (double val) {
+                                        setState(() => _dragAlignmentY = null);
+                                        _updateRemoteLayoutSettings(
+                                          previewHeight,
+                                          val.clamp(-1.0, 1.0),
+                                        );
+                                      },
                                     ),
                                   ),
-                                  Text(activeAlignmentY == 0.0 
+                                  Text(previewAlignmentY == 0.0 
                                       ? "Center" 
-                                      : activeAlignmentY < 0 
+                                      : previewAlignmentY < 0 
                                           ? "Top" 
                                           : "Bottom"),
                                 ],

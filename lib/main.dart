@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'home_screen.dart';
 
@@ -10,9 +11,9 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Leave the cache size at Firestore's default so local storage stays bounded.
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED, 
   );
 
   runApp(const ChoirApp());
@@ -26,13 +27,26 @@ class ChoirApp extends StatefulWidget {
 }
 
 class _ChoirAppState extends State<ChoirApp> {
-  // Track theme state globally (defaults to light to match your mockup)
   bool _isDarkMode = false;
 
-  void _toggleTheme() {
-    setState(() {
-      _isDarkMode = !_isDarkMode;
-    });
+  @override
+  void initState() {
+    super.initState();
+    _loadThemePreference();
+  }
+
+  Future<void> _loadThemePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedDarkMode = prefs.getBool('isDarkMode') ?? false;
+    if (mounted && savedDarkMode != _isDarkMode) {
+      setState(() => _isDarkMode = savedDarkMode);
+    }
+  }
+
+  Future<void> _toggleTheme() async {
+    setState(() => _isDarkMode = !_isDarkMode);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isDarkMode', _isDarkMode);
   }
 
   @override
@@ -41,34 +55,33 @@ class _ChoirAppState extends State<ChoirApp> {
       title: 'SAC Choir App',
       debugShowCheckedModeBanner: false,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      
+
       // Light Theme Configuration
       theme: ThemeData(
         brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFF1F1F1),
-        cardTheme: const CardTheme(color: Colors.white),
-        appBarTheme: const AppBarTheme(
+        cardTheme: const CardThemeData(color: Colors.white),
+        appBarTheme: const AppBarThemeData(
           backgroundColor: Color(0xFFF1F1F1),
           foregroundColor: Colors.black,
           elevation: 0,
         ),
         useMaterial3: true,
       ),
-      
+
       // Dark Theme Configuration
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF121212),
-        cardTheme: const CardTheme(color: Color(0xFF1E1E1E)),
-        appBarTheme: const AppBarTheme(
+        cardTheme: const CardThemeData(color: Color(0xFF1E1E1E)),
+        appBarTheme: const AppBarThemeData(
           backgroundColor: Color(0xFF121212),
           foregroundColor: Colors.white,
           elevation: 0,
         ),
         useMaterial3: true,
       ),
-      
-      // Pass the current state and toggle function down to the home screen
+
       home: SACAppHomeScreen(
         isDarkMode: _isDarkMode,
         onThemeToggle: _toggleTheme,

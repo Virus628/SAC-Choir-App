@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Returns true only for a signed-in user matching an admin UID.
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid in ['BwIz7NBJgNNZrJKLiGaLy9GpB1I2'];
+    }
+
+    // Songs: everyone can read, ONLY the admin can add/edit/delete.
+    match /songs/{songId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // App settings (header image framing): everyone can read, ONLY admin writes.
+    match /app_settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

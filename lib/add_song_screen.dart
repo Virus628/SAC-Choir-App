@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'song_model.dart';
 import 'lyrics_screen.dart';
+import 'song_categories.dart';
 
 class AddSongScreen extends StatefulWidget {
   const AddSongScreen({super.key});
@@ -15,14 +16,8 @@ class _AddSongScreenState extends State<AddSongScreen> {
   final _titleController = TextEditingController();
   final _composerController = TextEditingController();
   final _lyricsController = TextEditingController();
-  
-  // The exact categories from your UI design
-  final List<String> _categories = [
-    'Entrance Hymn', 'Kyrie', 'Gloria', 'Gospel Acclamation',
-    'Offertory', 'Sanctus', 'Memorial Acclamation', 'Great Amen',
-    'The Lord\'s Prayer', 'Agnus Dei', 'Communion', 'Recessional Hymn'
-  ];
-  
+  final _categoryFieldKey = GlobalKey<FormFieldState<String>>();
+
   String? _selectedCategory;
   bool _isUploading = false;
 
@@ -35,6 +30,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
     }
 
     setState(() => _isUploading = true);
+    final messenger = ScaffoldMessenger.of(context);
 
     try {
       // Pushing data to Firestore (fully supports offline-first local caching)
@@ -46,22 +42,23 @@ class _AddSongScreenState extends State<AddSongScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Song added successfully! 🎉')),
-        );
-        // Clear inputs after successful local write
-        _titleController.clear();
-        _composerController.clear();
-        _lyricsController.clear();
-        setState(() {
-          _selectedCategory = null;
-          _isUploading = false;
-        });
-      }
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Song added successfully! 🎉')),
+      );
+      // Clear inputs after successful local write
+      _titleController.clear();
+      _composerController.clear();
+      _lyricsController.clear();
+      _categoryFieldKey.currentState?.reset();
+      setState(() {
+        _selectedCategory = null;
+        _isUploading = false;
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text('Error saving song: $e')),
       );
     }
@@ -126,14 +123,15 @@ class _AddSongScreenState extends State<AddSongScreen> {
 
                           // Category Picker Dropdown
                           DropdownButtonFormField<String>(
-                            value: _selectedCategory,
+                            key: _categoryFieldKey,
+                            initialValue: _selectedCategory,
                             hint: const Text('Select Mass Part / Category'),
                             decoration: InputDecoration(
                               border: const OutlineInputBorder(),
                               filled: true,
                               fillColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
                             ),
-                            items: _categories.map((String category) {
+                            items: songCategories.map((String category) {
                               return DropdownMenuItem<String>(
                                 value: category,
                                 child: Text(category),
