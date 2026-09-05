@@ -6,10 +6,10 @@ import 'add_song_screen.dart';
 import 'lyrics_screen.dart';
 import 'song_model.dart';
 import 'song_categories.dart';
-import 'app_config.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'admin_auth.dart';
+import 'update_service.dart';
+import 'updater/updater.dart';
 
 class SACAppHomeScreen extends StatefulWidget {
   final bool isDarkMode;
@@ -31,7 +31,7 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
 
   bool _isAdminMode = false;
 
-  String _appVersion = '';
+  String? _appVersion;
 
   // Local preview while the image-framing sliders are being dragged; commits
   // to Firestore once per gesture via onChangeEnd to avoid write spam.
@@ -42,6 +42,10 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
   void initState() {
     super.initState();
     _loadAppVersion();
+    // Quietly look for a published update after the first frame renders.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdates(silent: true);
+    });
   }
 
   Future<void> _loadAppVersion() async {
@@ -51,18 +55,34 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
         setState(() => _appVersion = '${info.version}+${info.buildNumber}');
       }
     } catch (_) {
-      // Leave _appVersion empty; the drawer falls back to 'Version -'.
+      // Leave _appVersion null; the drawer falls back to 'Version -'.
     }
   }
 
-  // Opens the browser to download the updated build
-  Future<void> _downloadLatestUpdate() async {
-    final Uri url = Uri.parse(AppConfig.updateDownloadUrl);
-
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint('Could not launch the download link');
+  // Checks Firestore for a newer build and, if found, runs the in-app update
+  // flow (download + system install on Android, browser on other platforms).
+  Future<void> _checkForUpdates({bool silent = false}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final update = await UpdateService().checkForUpdate();
+      if (!mounted) return;
+      if (update == null) {
+        if (!silent) {
+          messenger.showSnackBar(
+            const SnackBar(content: Text("You're on the latest version.")),
+          );
+        }
+        return;
+      }
+      await runAppUpdater(context, update);
+    } catch (_) {
+      if (!silent && mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Could not check for updates. Try again later.'),
+          ),
+        );
+      }
     }
   }
 
@@ -179,10 +199,10 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
                 ListTile(
                   leading: const Icon(Icons.system_update, color: Colors.blue),
                   title: const Text('Update/Download App'),
-                  subtitle: const Text('Check for new app features'),
+                  subtitle: const Text('Download the latest version'),
                   onTap: () {
                     Navigator.pop(context); // Close the side drawer
-                    _downloadLatestUpdate(); // Trigger download action
+                    _checkForUpdates();
                   },
                 ),
 
@@ -228,7 +248,9 @@ class _SACAppHomeScreenState extends State<SACAppHomeScreen> {
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Text(
-                    _appVersion.isEmpty ? 'Version -' : 'Version $_appVersion',
+                    (_appVersion ?? '').isEmpty
+                        ? 'Version -'
+                        : 'Version $_appVersion',
                     style: TextStyle(
                       color: widget.isDarkMode ? Colors.white38 : Colors.black38,
                       fontSize: 12,
